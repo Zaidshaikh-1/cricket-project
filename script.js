@@ -36,6 +36,7 @@ async function fetchMatches() {
     try {
         const response = await fetch('https://api.cricapi.com/v1/matches?apikey=26bf2555-42d0-42c7-9bc4-485a3fd68790&offset=0');
         const data = await response.json();
+        console.log(data);
         const matches = getArray(data);
         if (matches.length === 0) return showMessage(containerId, 'No matches found.', 'empty');
         renderMatches(matches, containerId);
