@@ -13,6 +13,27 @@ function showMessage(containerId, msg, className) {
     el.innerHTML = `<p class="${className || 'info'}">${msg}</p>`;
 }
 
+// Map populated from /countries API. Keys: country/team name -> flag URL
+const countryFlagsMap = {};
+// Small alias map for common cricket team names that differ from country names
+const teamAliases = {
+    'England': 'United Kingdom',
+    'Scotland': 'United Kingdom',
+    'West Indies': 'West Indies'
+};
+
+function getFlagUrl(team) {
+    if (!team) return '';
+    // direct exact match from countries API
+    if (countryFlagsMap[team]) return countryFlagsMap[team];
+    // alias fallback
+    if (teamAliases[team] && countryFlagsMap[teamAliases[team]]) {
+        return countryFlagsMap[teamAliases[team]];
+    }
+    // try basic name-based fallback (countryflagsapi supports many names)
+    return `https://countryflagsapi.com/png/${encodeURIComponent(team)}`;
+}
+
 // Fetch and render current matches into #crntmatches
 async function fetchCurrentMatches() {
     const containerId = 'crntmatches';
@@ -50,9 +71,21 @@ async function fetchCountryFlags(){
     try {
         const response= await fetch('https://api.cricapi.com/v1/countries?apikey=26bf2555-42d0-42c7-9bc4-485a3fd68790&offset=0');
         const data = await response.json();
-        console.log(data);
-
-
+        // API shapes vary; try several properties
+        const list = data.data || data.countries || data || [];
+        if (Array.isArray(list)) {
+            list.forEach(item => {
+                const name = item.name || item.country || item.country_name || item.countryName;
+                const flag = item.flag || item.flag_url || item.country_flag || item.image || (item.iso2 ? `https://flagcdn.com/48x36/${item.iso2.toLowerCase()}.png` : '');
+                if (name) countryFlagsMap[name] = flag || '';
+            });
+        }
+        // apply aliases where possible
+        Object.keys(teamAliases).forEach(team => {
+            const countryName = teamAliases[team];
+            if (countryFlagsMap[countryName]) countryFlagsMap[team] = countryFlagsMap[countryName];
+        });
+        console.log('countryFlagsMap', countryFlagsMap);
     } catch (error) {
         console.error(error);
     }
@@ -67,6 +100,8 @@ function renderMatches(matches, containerId) {
     matches.forEach(m => {
         const team1 = m['team-1'] || m.team1 || m.teamA || 'Team 1';
         const team2 = m['team-2'] || m.team2 || m.teamB || 'Team 2';
+        const team1Flag = getFlagUrl(team1);
+        const team2Flag = getFlagUrl(team2);
         const title = m.name || m.title || `${team1} vs ${team2}`;
         const status = m.status || (m.matchStarted ? 'Live' : 'Scheduled') || '';
         const id = m.id || m.unique_id || m.match_id || '';
@@ -76,7 +111,11 @@ function renderMatches(matches, containerId) {
         card.className = 'match-card';
         card.innerHTML = `
             <h3>${title}</h3>
-            <p><strong>${team1}</strong> vs <strong>${team2}</strong></p>
+            <p class="teams">
+                <span class="team"><img src="${team1Flag}" alt="${team1} flag" class="flag" onerror="this.style.display='none'"> <strong>${team1}</strong></span>
+                <span class="vs">vs</span>
+                <span class="team"><img src="${team2Flag}" alt="${team2} flag" class="flag" onerror="this.style.display='none'"> <strong>${team2}</strong></span>
+            </p>
             <p>${status}</p>
             <p>${score}</p>
             <button class="details-btn" data-id="${id}">View details</button>
@@ -148,11 +187,14 @@ document.addEventListener('click', (e) => {
 });
 
 // Wire buttons after DOM loads
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     const btnCurrent = document.getElementById('btn-current');
     const btnAll = document.getElementById('btn-all');
     if (btnCurrent) btnCurrent.addEventListener('click', fetchCurrentMatches);
     if (btnAll) btnAll.addEventListener('click', fetchMatches);
+
+    // Load country flags first so flag images are ready when matches render
+    await fetchCountryFlags();
 
     // Optionally load current matches automatically on page load
     fetchCurrentMatches();
